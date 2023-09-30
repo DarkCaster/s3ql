@@ -275,7 +275,9 @@ class Operations(pyfuse3.Operations):
             elif name == b'upload-meta':
                 if self.upload_task is not None:
                     self.inodes.flush()
+                    completion = self.upload_task.completion
                     self.upload_task.event.set()
+                    await completion.wait()
                 else:
                     raise FUSEError(errno.ENOTTY)
 
