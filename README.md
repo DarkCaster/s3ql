@@ -27,6 +27,6 @@ fs-passphrase: <file system password>
 
 - Initial motivation for me was to create quick solution that allow me to recover data from my storj bucket with s3ql filesystem, because it suddenly broke when reached 100K object limit. I cannot predict what other compatibility issues with Storj S3 API may arise in the future. These future problems may not be solvable at all.
 
-- I will continue to use Storj to host my s3ql filesystem for some time, and I'll try to maintain this separate fork as long as it doesn't take up too much of my time. Merging new features from the upstream may be delayed. At some point it maybe impossible to merge new upstream revisions at all due to imcompatible changes.
+- I will continue to use Storj to host my s3ql filesystem for some time, and I'll try to maintain this separate fork as long as it doesn't take up too much of my time. Merging new features from the upstream may be delayed. At some point it maybe impossible to merge new upstream revisions at all due to incompatible changes.
 
 - If you are interested in longterm use of Storj to host your s3ql filesystem, please contact author via github issue above. Also consider helping implement a real long-term solution instead of this quick-fix.
