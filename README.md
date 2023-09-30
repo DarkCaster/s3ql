@@ -23,7 +23,7 @@ fs-passphrase: <file system password>
 
 - Currently there are no helper utilities or scripts available to convert `s3c` filesystem to `storj` layout and vise versa. Maybe I publish it someday, or maybe you can help me to implement it properly and post it here. Contact me if you are interested to help.
 
-- This fork is not stable and it never become stable for critical production use without merging it into mainstream. Please, do not trust your precious data to it without setting up proper backups first. YOU HAVE BEEN WARNED.
+- This fork is not stable and it never become stable for critical production use without merging it into mainstream. Please, do not trust your precious data to it without setting up proper backups first. **YOU HAVE BEEN WARNED**.
 
 - Initial motivation for me was to create quick solution that allow me to recover data from my storj bucket with s3ql filesystem, because it suddenly broke when reached 100K object limit. I cannot predict what other compatibility issues with Storj S3 API may arise in the future. These future problems may not be solvable at all.
 
