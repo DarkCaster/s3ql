@@ -49,6 +49,7 @@ class STORJConnection(HTTPConnection):
     def reset(self):
         self.disconnect()
 
+
 class Backend(s3c.Backend):
     """A backend for Storj S3 gateway-st/mt
 
