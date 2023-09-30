@@ -5,9 +5,11 @@ on:
   pull_request:
     branches:
       - master
+      - custom
   push:
     branches:
       - master
+      - custom
 permissions:
   contents: read
 concurrency:
