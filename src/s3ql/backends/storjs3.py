@@ -14,6 +14,10 @@ from typing import Any, BinaryIO, Dict, Optional
 from ..logging import QuietError
 from . import s3c
 
+from s3ql.http import (
+    HTTPConnection,
+)
+
 log = logging.getLogger(__name__)
 
 OBJ_DATA_TRANSLATED_RE = re.compile(r'^(.*)(s3ql_data)/([0-9]+)$')
@@ -33,6 +37,17 @@ def STR_ENCODE(key):
 def STR_DECODE(b64key):
     return base64.urlsafe_b64decode(b64key.encode()).decode()
 
+# NOTE: as of S3QL 5.1.2 - HTTPConnection class seem to contain internal problem that may lead to filesystem crash
+# when calling to "reset" method, it will open another connection right after disconnect, and if it fail - exception may not be handled properly
+# when it called from inside Backend::is_temp_failure method.
+# We are needed NOT to reinitialize connection in "reset" method with STORJ anyway,
+# so fix it here until it changed in upstream
+class STORJConnection(HTTPConnection):
+    def __init__(self, hostname, port=None, ssl_context=None, proxy=None):
+        super().__init__(hostname, port, ssl_context, proxy)
+
+    def reset(self):
+        self.disconnect()
 
 class Backend(s3c.Backend):
     """A backend for Storj S3 gateway-st/mt
@@ -89,6 +104,11 @@ class Backend(s3c.Backend):
             return result
         raise RuntimeError(f'Failed to translate data key to s3 form: {key}')
 
+    # we are using our STORJConnection wrapper with some minor fixes and debugging
+    def _get_conn(self):
+        conn = STORJConnection(self.hostname, self.port, proxy=self.proxy, ssl_context=self.ssl_context)
+        return conn
+
     def list(self, prefix=''):
         # try to convert binary string key to string if needed
         if not isinstance(prefix, str):
@@ -142,12 +162,19 @@ class Backend(s3c.Backend):
     def __str__(self):
         return 'storjs3://%s/%s/%s' % (self.hostname, self.bucket_name, self.prefix)
 
+    # improve error handling for STORJ backend to make it more resilent for errors during peak hours
     def is_temp_failure(self, exc):
-        result = super().is_temp_failure(exc)
+        result = False
+        try:
+            result = super().is_temp_failure(exc)
+            log.info('S3 error, temporary: %r, exc: %s, %s', result, type(exc).__name__, exc)
+        except Exception as e:
+            log.warning('Parent is_temp_failure call failed, exception: %s, %s', type(e).__name__, e)
+            # make such error to be always temporary
+            result = True
         # Disconnect from STORJ backend on any error, in order to always create new connection right before next request.
         # It seem that STORJ S3 gateway does not like to reuse HTTP connection even after legitimate HTTP error responses.
         # For example 429 response with long retry timeout followed after that - makes currently established HTTP/TLS connection dormant,
         # and it silently closed on remote side long before the next request, causing fail and retry on next retry.
-        log.info('closing connection to STORJ because of error')
         self.conn.disconnect()
         return result
