@@ -175,6 +175,6 @@ class Backend(s3c.Backend):
         # Disconnect from STORJ backend on any error, in order to always create new connection right before next request.
         # It seem that STORJ S3 gateway does not like to reuse HTTP connection even after legitimate HTTP error responses.
         # For example 429 response with long retry timeout followed after that - makes currently established HTTP/TLS connection dormant,
-        # and it silently closed on remote side long before the next request, causing fail and retry on next retry.
+        # and it silently closed on remote side long before the next request, causing fail on retry
         self.conn.disconnect()
         return result
