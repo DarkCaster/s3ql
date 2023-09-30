@@ -19,7 +19,7 @@ fs-passphrase: <file system password>
 
 ## IMPORTANT NOTES, read before use
 
-- New `storjs3` backend is not interoperable with `s3c` backend. It changes object layout in your storj bucket that needed to fix the issue mentioned above. You can migrate your current filesystem manually, but you need some scripts for it that not published here. You can even convert your filesystem in broken state (after it suddenly reached 100K object limit and crashed after that), but you need to keep you previous s3c cache intact and also you need some other changes in s3ql source code to be able to run fsck. contact me if you need help with this task.
+- New `storjs3` backend is not interoperable with `s3c` backend. It changes object layout in your storj bucket that needed to fix the issue mentioned above. You can migrate your current filesystem manually, but you need some scripts for it that not published here. You can even convert your filesystem in broken state (after it suddenly reached 100K object limit and crashed after that), but you need to keep you previous s3c cache intact and also you need some other changes in s3ql source code to be able to run fsck. Contact me if you need help with this task.
 
 - Currently there are no helper utilities or scripts available to convert `s3c` filesystem to `storj` layout and vise versa. Maybe I publish it someday, or maybe you can help me to implement it properly and post it here. Contact me if you are interested to help.
 
