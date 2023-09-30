@@ -21,7 +21,7 @@ fs-passphrase: <file system password>
 
 - New `storjs3` backend it not interoperable with `s3c` backend. It changes object layout in your storj bucket that needed to fix the issue mentioned above. You can migrate your current filesystem manually, but you need some scripts for it that not published here. You can even convert your filesystem in broken state (after it suddenly reached 100K object limit and crashed after that), but you need to keep you previous s3c cache intact and also you need some other changes in s3ql source code to be able to run fsck. contact me if you need help with this task.
 
-- Currenly there are no helper utilities or scripts available to convert `s3c` filesystem to `storj` layout and vise versa. Maybe I publish it someday, or maybe you can help me to implement it properly and post it here. Contact me if you are interested to help.
+- Currently there are no helper utilities or scripts available to convert `s3c` filesystem to `storj` layout and vise versa. Maybe I publish it someday, or maybe you can help me to implement it properly and post it here. Contact me if you are interested to help.
 
 - This fork is not stable and it never become stable for critical production use without merging it into mainstream. Please, do not trust your precious data to it without setting up proper backups first. YOU HAVE BEEN WARNED.
 
@@ -29,4 +29,4 @@ fs-passphrase: <file system password>
 
 - I will continue to use Storj to host my s3ql filesystem for some time, and I'll try to maintain this separate fork as long as it doesn't take up too much of my time. Merging new features from the upstream may be delayed. At some point it maybe impossible to merge new upstream revisions at all due to incompatible changes.
 
-- If you are interested in longterm use of Storj to host your s3ql filesystem, please contact author via github issue above. Also consider helping implement a real long-term solution instead of this quick-fix.
+- If you are interested in long-term use of Storj to host your s3ql filesystem, please contact author via github issue above. Also consider helping implement a real long-term solution instead of this quick-fix.
