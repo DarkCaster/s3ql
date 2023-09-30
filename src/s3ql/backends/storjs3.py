@@ -37,6 +37,7 @@ def STR_ENCODE(key):
 def STR_DECODE(b64key):
     return base64.urlsafe_b64decode(b64key.encode()).decode()
 
+
 # NOTE: as of S3QL 5.1.2 - HTTPConnection class seem to contain internal problem that may lead to filesystem crash
 # when calling to "reset" method, it will open another connection right after disconnect, and if it fail - exception may not be handled properly
 # when it called from inside Backend::is_temp_failure method.
