@@ -570,7 +570,7 @@ def get_available_seq_nos(backend: AbstractBackend) -> List[int]:
     return nos
 
 
-def expire_objects(backend, versions_to_keep=32):
+def expire_objects(backend, versions_to_keep=4):
     '''Delete metadata objects that are no longer needed'''
 
     log.debug('Expiring old metadata backups...')
