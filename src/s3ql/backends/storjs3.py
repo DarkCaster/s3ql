@@ -106,7 +106,9 @@ class Backend(s3c.Backend):
 
     # we are using our STORJConnection wrapper with some minor fixes and debugging
     def _get_conn(self):
-        conn = STORJConnection(self.hostname, self.port, proxy=self.proxy, ssl_context=self.ssl_context)
+        conn = STORJConnection(
+            self.hostname, self.port, proxy=self.proxy, ssl_context=self.ssl_context
+        )
         return conn
 
     def list(self, prefix=''):
@@ -169,7 +171,9 @@ class Backend(s3c.Backend):
             result = super().is_temp_failure(exc)
             log.info('S3 error, temporary: %r, exc: %s, %s', result, type(exc).__name__, exc)
         except Exception as e:
-            log.warning('Parent is_temp_failure call failed, exception: %s, %s', type(e).__name__, e)
+            log.warning(
+                'Parent is_temp_failure call failed, exception: %s, %s', type(e).__name__, e
+            )
             # make such error to be always temporary
             result = True
         # Disconnect from STORJ backend on any error, in order to always create new connection right before next request.
