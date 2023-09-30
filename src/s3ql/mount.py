@@ -659,6 +659,7 @@ class MetadataUploadTask:
         self.backend_pool = backend_pool
         self.db = db
         self.event = trio.Event()
+        self.completion = trio.Event()
         self.quit = False
         self.params = params
         self.options = options
@@ -714,6 +715,9 @@ class MetadataUploadTask:
                 upload_params(backend, self.params)
 
                 await trio.to_thread.run_sync(expire_objects, backend)
+
+                self.completion.set()
+                self.completion = trio.Event()
 
         log.debug('finished')
 
