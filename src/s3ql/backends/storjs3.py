@@ -171,7 +171,10 @@ class Backend(s3c.Backend):
         result = False
         try:
             result = super().is_temp_failure(exc)
-            log.info('S3 error, temporary: %r, exc: %s, %s', result, type(exc).__name__, exc)
+            if result == True:
+                log.info('S3 error, exception: %s, %s', type(exc).__name__, exc)
+            else:
+                log.warning('S3 failed, exception: %s, %s', type(exc).__name__, exc)
         except Exception as e:
             log.warning(
                 'Parent is_temp_failure call failed, exception: %s, %s', type(e).__name__, e
