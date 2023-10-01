@@ -59,6 +59,9 @@ class STORJConnection(HTTPConnection):
     def reset(self):
         self.disconnect()
 
+# some (in)sane default for object retention periods and retries
+LOCK_RETRY_INTERVAL = 1
+GRACELOCK_INTERVAL = 30
 
 class RetentionLock:
 
@@ -74,25 +77,22 @@ class RetentionLock:
             # wait for retention time, calculated at previous step, if any
             if wait_time > 0:
                 time.sleep(wait_time)
-            # get current time mark
-            mark = time.monotonic()
             self.oplock.acquire()
+            mark = time.monotonic()
             try:
                 # check key is not writelocked, set timer, start over if so
                 if key in self.writelocks:
                     log.warning('trying to read key that is held by writelock: %s', key)
-                    wait_time = GET_RANDOM_DELAY(1,1.5)
+                    wait_time = LOCK_RETRY_INTERVAL + GET_RANDOM_DELAY(0.1,10)
                     continue
                 # check key is not gracelocked, set timer, start over if so
-                try:
+                if key in self.gracelocks:
                     mark_end = self.gracelocks[key]
                     wait_time = mark_end - mark
                     if wait_time > 0:
                         wait_time = wait_time + GET_RANDOM_DELAY(0.1,10)
                         log.warning('trying to read key that is held by gracelock: %s, time left: %0.2f', key, wait_time)
                         continue
-                except KeyError:
-                    pass
                 # TODO perform housekeeping for gracelocks
 
                 # increase key read counter
@@ -125,19 +125,30 @@ class RetentionLock:
             # wait for retention time, calculated at previous step if any
             if wait_time > 0:
                 time.sleep(wait_time)
-            # get current time mark
-            mark = time.monotonic()
             self.oplock.acquire()
+            mark = time.monotonic()
             try:
                 # check key not readlocked, set timer, start over if so
-
-
+                if key in self.readlocks:
+                    log.warning('trying to write key that is held by readlock: %s', key)
+                    wait_time = LOCK_RETRY_INTERVAL + GET_RANDOM_DELAY(0.1,10)
+                    continue
                 # check key not writelocked, set timer, start over if so
-
+                if key in self.writelocks:
+                    log.warning('trying to write key that is held by writelock: %s', key)
+                    wait_time = LOCK_RETRY_INTERVAL + GET_RANDOM_DELAY(0.1,10)
+                    continue
                 # check key is not gracelocked, set timer, start over if so
-
-                # perform housekeeping for gracelocks
+                if key in self.gracelocks:
+                    mark_end = self.gracelocks[key]
+                    wait_time = mark_end - mark
+                    if wait_time > 0:
+                        wait_time = wait_time + GET_RANDOM_DELAY(0.1,10)
+                        log.warning('trying to write key that is held by gracelock: %s, time left: %0.2f', key, wait_time)
+                        continue
+                # TODO: perform housekeeping for gracelocks
                 # set writelock for this key
+                self.writelocks.add(key)
                 return
             finally:
                 self.oplock.release()
@@ -146,8 +157,12 @@ class RetentionLock:
         self.oplock.acquire()
         try:
             # remove writelock for this key
+            self.writelocks.remove(key)
             # set gracelock for this key
-            return
+            mark = time.monotonic() + GRACELOCK_INTERVAL
+            self.gracelocks[key] = mark
+        except KeyError:
+            log.warning("key error while managing writelocks on write release")
         finally:
             self.oplock.release()
 
