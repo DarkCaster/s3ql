@@ -83,12 +83,12 @@ class RLockWithCounter:
 class RetentionLock:
 
     def __init__(self):
-        self.oplock = threading.Lock()
+        self.oplock = RLockWithCounter()
         self.writelocks = set()
         self.readlocks = dict()
         self.gracelocks = dict()
 
-    def AquireRead(self, key):
+    def AcquireRead(self, key):
         wait_time=0
         while True:
             # wait for retention time, calculated at previous step, if any
@@ -136,7 +136,7 @@ class RetentionLock:
         finally:
             self.oplock.release()
 
-    def AquireWrite(self, key):
+    def AcquireWrite(self, key):
         wait_time=0
         while True:
             # wait for retention time, calculated at previous step if any
@@ -273,32 +273,32 @@ class Backend(s3c.Backend):
 
     def delete(self, key):
         key_t = self._translate_s3_key_to_storj(key)
+        self.oplock.AcquireWrite(key_t,True)
         try:
-            self.oplock.AquireWrite(key_t)
             return super().delete(key_t)
         finally:
             self.oplock.ReleaseWrite(key_t)
 
     def lookup(self, key):
         key_t = self._translate_s3_key_to_storj(key)
+        self.oplock.AcquireRead(key_t)
         try:
-            self.oplock.AquireRead(key_t)
             return super().lookup(key_t)
         finally:
             self.oplock.ReleaseRead(key_t)
 
     def get_size(self, key):
         key_t = self._translate_s3_key_to_storj(key)
+        self.oplock.AcquireRead(key_t)
         try:
-            self.oplock.AquireRead(key_t)
             return super().get_size(key_t)
         finally:
             self.oplock.ReleaseRead(key_t)
 
     def readinto_fh(self, key: str, fh: BinaryIO):
         key_t = self._translate_s3_key_to_storj(key)
+        self.oplock.AcquireRead(key_t)
         try:
-            self.oplock.AquireRead(key_t)
             return super().readinto_fh(key_t, fh)
         finally:
             self.oplock.ReleaseRead(key_t)
@@ -311,8 +311,8 @@ class Backend(s3c.Backend):
         len_: Optional[int] = None,
     ):
         key_t = self._translate_s3_key_to_storj(key)
+        self.oplock.AcquireWrite(key_t)
         try:
-            self.oplock.AquireWrite(key_t)
             return super().write_fh(key_t, fh, metadata, len_)
         finally:
             self.oplock.ReleaseWrite(key_t)
