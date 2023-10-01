@@ -9,6 +9,9 @@ This work can be distributed under the terms of the GNU GPLv3.
 import logging
 import re
 import base64
+import time
+import threading
+import random
 
 from typing import Any, BinaryIO, Dict, Optional
 from ..logging import QuietError
@@ -38,6 +41,12 @@ def STR_DECODE(b64key):
     return base64.urlsafe_b64decode(b64key.encode()).decode()
 
 
+def GET_RANDOM_DELAY(base, mult):
+    if mult < 1:
+        mult = 1
+    return base * random.uniform(1, mult)
+
+
 # NOTE: as of S3QL 5.1.2 - HTTPConnection class seem to contain internal problem that may lead to filesystem crash
 # when calling to "reset" method, it will open another connection right after disconnect, and if it fail - exception may not be handled properly
 # when it called from inside Backend::is_temp_failure method.
@@ -51,6 +60,98 @@ class STORJConnection(HTTPConnection):
         self.disconnect()
 
 
+class RetentionLock:
+
+    def __init__(self):
+        self.oplock = threading.Lock()
+        self.writelocks = set()
+        self.readlocks = dict()
+        self.gracelocks = dict()
+
+    def AquireRead(self, key):
+        wait_time=0
+        while True:
+            # wait for retention time, calculated at previous step, if any
+            if wait_time > 0:
+                time.sleep(wait_time)
+            # get current time mark
+            mark = time.monotonic()
+            self.oplock.acquire()
+            try:
+                # check key is not writelocked, set timer, start over if so
+                if key in self.writelocks:
+                    log.warning('trying to read key that is held by writelock: %s', key)
+                    wait_time = GET_RANDOM_DELAY(1,1.5)
+                    continue
+                # check key is not gracelocked, set timer, start over if so
+                try:
+                    mark_end = self.gracelocks[key]
+                    wait_time = mark_end - mark
+                    if wait_time > 0:
+                        wait_time = wait_time + GET_RANDOM_DELAY(0.1,10)
+                        log.warning('trying to read key that is held by gracelock: %s, time left: %0.2f', key, wait_time)
+                        continue
+                except KeyError:
+                    pass
+                # TODO perform housekeeping for gracelocks
+
+                # increase key read counter
+                try:
+                    rcnt = self.readlocks[key]
+                    self.readlocks[key] = rcnt + 1
+                except KeyError:
+                    self.readlocks[key] = 1
+                return
+            finally:
+                self.oplock.release()
+
+    def ReleaseRead(self, key):
+        self.oplock.acquire()
+        try:
+            # decrease key read counter
+            rcnt = self.readlocks[key] - 1
+            if rcnt < 1:
+                del self.readlocks[key]
+            else:
+                self.readlocks[key] = rcnt
+        except KeyError:
+            log.warning("key error while managing readlocks on read release")
+        finally:
+            self.oplock.release()
+
+    def AquireWrite(self, key):
+        wait_time=0
+        while True:
+            # wait for retention time, calculated at previous step if any
+            if wait_time > 0:
+                time.sleep(wait_time)
+            # get current time mark
+            mark = time.monotonic()
+            self.oplock.acquire()
+            try:
+                # check key not readlocked, set timer, start over if so
+
+
+                # check key not writelocked, set timer, start over if so
+
+                # check key is not gracelocked, set timer, start over if so
+
+                # perform housekeeping for gracelocks
+                # set writelock for this key
+                return
+            finally:
+                self.oplock.release()
+
+    def ReleaseWrite(self, key):
+        self.oplock.acquire()
+        try:
+            # remove writelock for this key
+            # set gracelock for this key
+            return
+        finally:
+            self.oplock.release()
+
+
 class Backend(s3c.Backend):
     """A backend for Storj S3 gateway-st/mt
 
@@ -61,6 +162,7 @@ class Backend(s3c.Backend):
 
     def __init__(self, options):
         super().__init__(options)
+        self.oplock = RetentionLock()
 
     def _translate_s3_key_to_storj(self, key):
         '''convert object key to the form suitable for use with storj s3 bucket'''
@@ -139,19 +241,35 @@ class Backend(s3c.Backend):
 
     def delete(self, key):
         key_t = self._translate_s3_key_to_storj(key)
-        return super().delete(key_t)
+        try:
+            self.oplock.AquireWrite(key_t)
+            return super().delete(key_t)
+        finally:
+            self.oplock.ReleaseWrite(key_t)
 
     def lookup(self, key):
         key_t = self._translate_s3_key_to_storj(key)
-        return super().lookup(key_t)
+        try:
+            self.oplock.AquireRead(key_t)
+            return super().lookup(key_t)
+        finally:
+            self.oplock.ReleaseRead(key_t)
 
     def get_size(self, key):
         key_t = self._translate_s3_key_to_storj(key)
-        return super().get_size(key_t)
+        try:
+            self.oplock.AquireRead(key_t)
+            return super().get_size(key_t)
+        finally:
+            self.oplock.ReleaseRead(key_t)
 
     def readinto_fh(self, key: str, fh: BinaryIO):
         key_t = self._translate_s3_key_to_storj(key)
-        return super().readinto_fh(key_t, fh)
+        try:
+            self.oplock.AquireRead(key_t)
+            return super().readinto_fh(key_t, fh)
+        finally:
+            self.oplock.ReleaseRead(key_t)
 
     def write_fh(
         self,
@@ -161,7 +279,11 @@ class Backend(s3c.Backend):
         len_: Optional[int] = None,
     ):
         key_t = self._translate_s3_key_to_storj(key)
-        return super().write_fh(key_t, fh, metadata, len_)
+        try:
+            self.oplock.AquireWrite(key_t)
+            return super().write_fh(key_t, fh, metadata, len_)
+        finally:
+            self.oplock.ReleaseWrite(key_t)
 
     def __str__(self):
         return 'storjs3://%s/%s/%s' % (self.hostname, self.bucket_name, self.prefix)
