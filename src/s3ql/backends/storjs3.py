@@ -63,6 +63,23 @@ class STORJConnection(HTTPConnection):
 LOCK_RETRY_INTERVAL = 1
 GRACELOCK_INTERVAL = 30
 
+
+class RLockWithCounter:
+
+    def __init__(self):
+        self.lock = threading.RLock()
+        self.level = 0
+
+    def acquire(self):
+        self.lock.acquire()
+        self.level += 1
+        return self.level
+
+    def release(self):
+        self.level -= 1
+        self.lock.release()
+
+
 class RetentionLock:
 
     def __init__(self):
