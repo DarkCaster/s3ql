@@ -63,13 +63,22 @@ class STORJConnection(HTTPConnection):
 LOCK_RETRY_INTERVAL = 1
 GRACELOCK_INTERVAL = 30
 
-class RetentionLock:
+class ConsistencyLock:
+    '''
+    Some sort of read-write lock that tracks objects by it's key
+    not allowing to read and write in parallel to the same object,
+    but allowing to read same object same time in multiple threads.
+    It also add extra consistency delay to read and write operations
+    after previous write operation to the same object
+    '''
 
     def __init__(self):
         self.oplock = threading.Lock()
         self.writelocks = set()
         self.readlocks = dict()
         self.gracelocks = dict()
+        self.tls = threading.local()
+        self.tls.cnt = 0
 
     def AcquireRead(self, key):
         wait_time=0
@@ -80,27 +89,32 @@ class RetentionLock:
             self.oplock.acquire()
             mark = time.monotonic()
             try:
-                # check key is not writelocked, set timer, start over if so
-                if key in self.writelocks:
-                    log.warning('trying to read key that is held by writelock: %s', key)
-                    wait_time = LOCK_RETRY_INTERVAL + GET_RANDOM_DELAY(0.1,10)
-                    continue
-                # check key is not gracelocked, set timer, start over if so
-                if key in self.gracelocks:
-                    mark_end = self.gracelocks[key]
-                    wait_time = mark_end - mark
-                    if wait_time > 0:
-                        wait_time = wait_time + GET_RANDOM_DELAY(0.1,10)
-                        log.warning('trying to read key that is held by gracelock: %s, time left: %0.2f', key, wait_time)
+                if self.tls.cnt > 0:
+                    log.warning('recursive use of lock on read: %s', key)
+                else:
+                    # check key is not writelocked, set timer, start over if so
+                    if key in self.writelocks:
+                        log.warning('trying to read key that is held by writelock: %s', key)
+                        wait_time = LOCK_RETRY_INTERVAL + GET_RANDOM_DELAY(0.1,10)
                         continue
+                    # check key is not gracelocked, set timer, start over if so
+                    if key in self.gracelocks:
+                        mark_end = self.gracelocks[key]
+                        wait_time = mark_end - mark
+                        if wait_time > 0:
+                            wait_time = wait_time + GET_RANDOM_DELAY(0.1,10)
+                            log.warning('trying to read key that is held by gracelock: %s, time left: %0.2f', key, wait_time)
+                            continue
                 # TODO perform housekeeping for gracelocks
 
                 # increase key read counter
-                try:
+                if key in self.readlocks:
                     rcnt = self.readlocks[key]
                     self.readlocks[key] = rcnt + 1
-                except KeyError:
+                else:
                     self.readlocks[key] = 1
+                # increase thread local read counter
+                self.tls.cnt += 1
                 return
             finally:
                 self.oplock.release()
@@ -108,6 +122,8 @@ class RetentionLock:
     def ReleaseRead(self, key):
         self.oplock.acquire()
         try:
+            # increase thread local read counter
+            self.tls.cnt -= 1
             # decrease key read counter
             rcnt = self.readlocks[key] - 1
             if rcnt < 1:
@@ -177,7 +193,7 @@ class Backend(s3c.Backend):
 
     def __init__(self, options):
         super().__init__(options)
-        self.oplock = RetentionLock()
+        self.oplock = ConsistencyLock()
 
     def _translate_s3_key_to_storj(self, key):
         '''convert object key to the form suitable for use with storj s3 bucket'''
