@@ -10,4 +10,4 @@ class Backend(storjs3.Backend):
 
     def __init__(self, options):
         super().__init__(options)
-        self.oplock = storjs3.ConsistencyLock(1)
+        self.update_consistency_lock(1)

@@ -218,6 +218,9 @@ class ConsistencyLock:
             self.oplock.release()
 
 
+CONSISTENCY_LOCK = ConsistencyLock(GRACELOCK_INTERVAL)
+
+
 class Backend(s3c.Backend):
     """A backend for Storj S3 gateway-st/mt
 
@@ -228,8 +231,10 @@ class Backend(s3c.Backend):
 
     def __init__(self, options):
         super().__init__(options)
-        self.oplock = ConsistencyLock(GRACELOCK_INTERVAL)
         log.info('Storj S3 backend created by thread: %d', threading.get_native_id())
+
+    def update_consistency_lock(self, interval):
+        CONSISTENCY_LOCK.grace_timeout = interval
 
     def _translate_s3_key_to_storj(self, key):
         '''convert object key to the form suitable for use with storj s3 bucket'''
@@ -308,35 +313,35 @@ class Backend(s3c.Backend):
 
     def delete(self, key):
         key_t = self._translate_s3_key_to_storj(key)
-        self.oplock.AcquireWrite(key_t)
+        CONSISTENCY_LOCK.AcquireWrite(key_t)
         try:
             return super().delete(key_t)
         finally:
-            self.oplock.ReleaseWrite(key_t)
+            CONSISTENCY_LOCK.ReleaseWrite(key_t)
 
     def lookup(self, key):
         key_t = self._translate_s3_key_to_storj(key)
-        self.oplock.AcquireRead(key_t)
+        CONSISTENCY_LOCK.AcquireRead(key_t)
         try:
             return super().lookup(key_t)
         finally:
-            self.oplock.ReleaseRead(key_t)
+            CONSISTENCY_LOCK.ReleaseRead(key_t)
 
     def get_size(self, key):
         key_t = self._translate_s3_key_to_storj(key)
-        self.oplock.AcquireRead(key_t)
+        CONSISTENCY_LOCK.AcquireRead(key_t)
         try:
             return super().get_size(key_t)
         finally:
-            self.oplock.ReleaseRead(key_t)
+            CONSISTENCY_LOCK.ReleaseRead(key_t)
 
     def readinto_fh(self, key: str, fh: BinaryIO):
         key_t = self._translate_s3_key_to_storj(key)
-        self.oplock.AcquireRead(key_t)
+        CONSISTENCY_LOCK.AcquireRead(key_t)
         try:
             return super().readinto_fh(key_t, fh)
         finally:
-            self.oplock.ReleaseRead(key_t)
+            CONSISTENCY_LOCK.ReleaseRead(key_t)
 
     def write_fh(
         self,
@@ -346,11 +351,11 @@ class Backend(s3c.Backend):
         len_: Optional[int] = None,
     ):
         key_t = self._translate_s3_key_to_storj(key)
-        self.oplock.AcquireWrite(key_t)
+        CONSISTENCY_LOCK.AcquireWrite(key_t)
         try:
             return super().write_fh(key_t, fh, metadata, len_)
         finally:
-            self.oplock.ReleaseWrite(key_t)
+            CONSISTENCY_LOCK.ReleaseWrite(key_t)
 
     def __str__(self):
         return 'storjs3://%s/%s/%s' % (self.hostname, self.bucket_name, self.prefix)
