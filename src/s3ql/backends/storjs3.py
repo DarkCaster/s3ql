@@ -81,6 +81,18 @@ class ConsistencyLock:
         self.tls = threading.local()
         self.tls.cnt = 0
 
+    def _gracelocks_cleanup(self):
+        # no need to lock here
+        mark = time.monotonic()
+        to_remove = set()
+        # iterate over gracelocks, and record expired keys
+        for key, expiration in self.gracelocks.items():
+            if mark > expiration:
+                to_remove.add(key)
+        for key in to_remove:
+            del self.gracelocks[key]
+            #log.info("removed key from gracelocks: %s", key)
+
     def AcquireRead(self, key):
         wait_time=0
         while True:
@@ -106,8 +118,8 @@ class ConsistencyLock:
                             wait_time = wait_time + GET_RANDOM_DELAY(0.1,10)
                             log.info('trying to read key that is held by gracelock: %s, time left: %0.2f', key, wait_time)
                             continue
-                    # TODO perform housekeeping for gracelocks
-
+                    # perform housekeeping for gracelocks
+                    self._gracelocks_cleanup()
                 # increase key read counter
                 if key in self.readlocks:
                     rcnt = self.readlocks[key]
@@ -166,8 +178,8 @@ class ConsistencyLock:
                             wait_time = wait_time + GET_RANDOM_DELAY(0.1,10)
                             log.info('trying to write key that is held by gracelock: %s, time left: %0.2f', key, wait_time)
                             continue
-                    # TODO: perform housekeeping for gracelocks
-
+                    # perform housekeeping for gracelocks
+                    self._gracelocks_cleanup()
                 if self.tls.cnt < 1:
                     # set writelock for this key
                     self.writelocks.add(key)
