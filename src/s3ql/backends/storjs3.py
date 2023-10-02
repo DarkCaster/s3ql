@@ -79,7 +79,18 @@ class ConsistencyLock:
         self.gracelocks = dict()
         self.grace_timeout = grace_timeout
         self.tls = threading.local()
-        self.tls.cnt = 0
+
+    @property
+    def tls_cnt(self):
+        try:
+            return self.tls.cnt
+        except AttributeError:
+            self.tls.cnt = 0
+            return self.tls.cnt
+
+    @tls_cnt.setter
+    def tls_cnt(self, value):
+        self.tls.cnt = value
 
     def _gracelocks_cleanup(self):
         # no need to lock here
@@ -102,7 +113,7 @@ class ConsistencyLock:
             self.oplock.acquire()
             mark = time.monotonic()
             try:
-                if self.tls.cnt > 0:
+                if self.tls_cnt > 0:
                     log.info('recursive use of lock for claiming read operaion: %s', key)
                 else:
                     # check key is not writelocked, set timer, start over if so
@@ -127,7 +138,7 @@ class ConsistencyLock:
                 else:
                     self.readlocks[key] = 1
                 # increase thread local counter
-                self.tls.cnt += 1
+                self.tls_cnt += 1
                 return
             finally:
                 self.oplock.release()
@@ -136,7 +147,7 @@ class ConsistencyLock:
         self.oplock.acquire()
         try:
             # decrease thread local counter
-            self.tls.cnt -= 1
+            self.tls_cnt -= 1
             # decrease key read counter
             rcnt = self.readlocks[key] - 1
             if rcnt < 1:
@@ -157,7 +168,7 @@ class ConsistencyLock:
             self.oplock.acquire()
             mark = time.monotonic()
             try:
-                if self.tls.cnt > 0:
+                if self.tls_cnt > 0:
                     log.info('recursive use of lock for claiming write operaion: %s', key)
                 else:
                     # check key not readlocked, set timer, start over if so
@@ -180,11 +191,11 @@ class ConsistencyLock:
                             continue
                     # perform housekeeping for gracelocks
                     self._gracelocks_cleanup()
-                if self.tls.cnt < 1:
+                if self.tls_cnt < 1:
                     # set writelock for this key
                     self.writelocks.add(key)
                 # increase thread local counter
-                self.tls.cnt += 1
+                self.tls_cnt += 1
                 return
             finally:
                 self.oplock.release()
@@ -193,8 +204,8 @@ class ConsistencyLock:
         self.oplock.acquire()
         try:
             # decrease thread local counter
-            self.tls.cnt -= 1
-            if self.tls.cnt > 0:
+            self.tls_cnt -= 1
+            if self.tls_cnt > 0:
                 return
             # remove writelock for this key
             self.writelocks.remove(key)
