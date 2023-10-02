@@ -229,6 +229,7 @@ class Backend(s3c.Backend):
     def __init__(self, options):
         super().__init__(options)
         self.oplock = ConsistencyLock(GRACELOCK_INTERVAL)
+        log.info('Storj S3 backend created by thread: %d', threading.get_native_id())
 
     def _translate_s3_key_to_storj(self, key):
         '''convert object key to the form suitable for use with storj s3 bucket'''
