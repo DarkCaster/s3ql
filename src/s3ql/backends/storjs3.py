@@ -90,7 +90,7 @@ class ConsistencyLock:
             mark = time.monotonic()
             try:
                 if self.tls.cnt > 0:
-                    log.warning('recursive use of lock on read: %s', key)
+                    log.info('recursive use of lock for claiming read operaion: %s', key)
                 else:
                     # check key is not writelocked, set timer, start over if so
                     if key in self.writelocks:
@@ -103,9 +103,9 @@ class ConsistencyLock:
                         wait_time = mark_end - mark
                         if wait_time > 0:
                             wait_time = wait_time + GET_RANDOM_DELAY(0.1,10)
-                            log.warning('trying to read key that is held by gracelock: %s, time left: %0.2f', key, wait_time)
+                            log.info('trying to read key that is held by gracelock: %s, time left: %0.2f', key, wait_time)
                             continue
-                # TODO perform housekeeping for gracelocks
+                    # TODO perform housekeeping for gracelocks
 
                 # increase key read counter
                 if key in self.readlocks:
@@ -113,7 +113,7 @@ class ConsistencyLock:
                     self.readlocks[key] = rcnt + 1
                 else:
                     self.readlocks[key] = 1
-                # increase thread local read counter
+                # increase thread local counter
                 self.tls.cnt += 1
                 return
             finally:
@@ -122,7 +122,7 @@ class ConsistencyLock:
     def ReleaseRead(self, key):
         self.oplock.acquire()
         try:
-            # increase thread local read counter
+            # decrease thread local counter
             self.tls.cnt -= 1
             # decrease key read counter
             rcnt = self.readlocks[key] - 1
@@ -144,27 +144,34 @@ class ConsistencyLock:
             self.oplock.acquire()
             mark = time.monotonic()
             try:
-                # check key not readlocked, set timer, start over if so
-                if key in self.readlocks:
-                    log.warning('trying to write key that is held by readlock: %s', key)
-                    wait_time = LOCK_RETRY_INTERVAL + GET_RANDOM_DELAY(0.1,10)
-                    continue
-                # check key not writelocked, set timer, start over if so
-                if key in self.writelocks:
-                    log.warning('trying to write key that is held by writelock: %s', key)
-                    wait_time = LOCK_RETRY_INTERVAL + GET_RANDOM_DELAY(0.1,10)
-                    continue
-                # check key is not gracelocked, set timer, start over if so
-                if key in self.gracelocks:
-                    mark_end = self.gracelocks[key]
-                    wait_time = mark_end - mark
-                    if wait_time > 0:
-                        wait_time = wait_time + GET_RANDOM_DELAY(0.1,10)
-                        log.warning('trying to write key that is held by gracelock: %s, time left: %0.2f', key, wait_time)
+                if self.tls.cnt > 0:
+                    log.info('recursive use of lock for claiming write operaion: %s', key)
+                else:
+                    # check key not readlocked, set timer, start over if so
+                    if key in self.readlocks:
+                        log.warning('trying to write key that is held by readlock: %s', key)
+                        wait_time = LOCK_RETRY_INTERVAL + GET_RANDOM_DELAY(0.1,10)
                         continue
-                # TODO: perform housekeeping for gracelocks
-                # set writelock for this key
-                self.writelocks.add(key)
+                    # check key not writelocked, set timer, start over if so
+                    if key in self.writelocks:
+                        log.warning('trying to write key that is held by writelock: %s', key)
+                        wait_time = LOCK_RETRY_INTERVAL + GET_RANDOM_DELAY(0.1,10)
+                        continue
+                    # check key is not gracelocked, set timer, start over if so
+                    if key in self.gracelocks:
+                        mark_end = self.gracelocks[key]
+                        wait_time = mark_end - mark
+                        if wait_time > 0:
+                            wait_time = wait_time + GET_RANDOM_DELAY(0.1,10)
+                            log.info('trying to write key that is held by gracelock: %s, time left: %0.2f', key, wait_time)
+                            continue
+                    # TODO: perform housekeeping for gracelocks
+
+                if self.tls.cnt < 1:
+                    # set writelock for this key
+                    self.writelocks.add(key)
+                # increase thread local counter
+                self.tls.cnt += 1
                 return
             finally:
                 self.oplock.release()
@@ -172,6 +179,10 @@ class ConsistencyLock:
     def ReleaseWrite(self, key):
         self.oplock.acquire()
         try:
+            # decrease thread local counter
+            self.tls.cnt -= 1
+            if self.tls.cnt > 0:
+                return
             # remove writelock for this key
             self.writelocks.remove(key)
             # set gracelock for this key
