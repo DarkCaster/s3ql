@@ -549,7 +549,7 @@ def test_replay(backend):
         backend.fetch(key2)
 
 
-@pytest.mark.with_backend('s3c/raw', 'storjs3/raw', require_mock_server=True)
+@pytest.mark.with_backend('s3c/raw', 'storjs3t/raw', require_mock_server=True)
 def test_list_bug(backend, monkeypatch):
     keys = ['prefixa' + newname() for _ in range(6)] + ['prefixb' + newname() for _ in range(6)]
     values = [newvalue() for _ in range(12)]
@@ -573,7 +573,7 @@ def test_list_bug(backend, monkeypatch):
     assert set(backend.list()) == set(keys)
 
 
-@pytest.mark.with_backend('s3c/aes+zlib', 'storjs3/aes+zlib', require_mock_server=True)
+@pytest.mark.with_backend('s3c/aes+zlib', 'storjs3t/aes+zlib', require_mock_server=True)
 def test_corrupted_get(backend, monkeypatch):
     key = 'brafasel'
     value = b'hello there, let us see whats going on'
@@ -599,7 +599,7 @@ def test_corrupted_get(backend, monkeypatch):
         assert backend[key] == value
 
 
-@pytest.mark.with_backend('s3c/{raw,aes+zlib}', 'storjs3/{raw,aes+zlib}', require_mock_server=True)
+@pytest.mark.with_backend('s3c/{raw,aes+zlib}', 'storjs3t/{raw,aes+zlib}', require_mock_server=True)
 def test_corrupted_meta(backend, monkeypatch):
     key = 'brafasel'
     value = b'hello there, let us see whats going on'
@@ -625,7 +625,7 @@ def test_corrupted_meta(backend, monkeypatch):
         assert backend[key] == value
 
 
-@pytest.mark.with_backend('s3c/{raw,aes+zlib}', 'storjs3/{raw,aes+zlib}', require_mock_server=True)
+@pytest.mark.with_backend('s3c/{raw,aes+zlib}', 'storjs3t/{raw,aes+zlib}', require_mock_server=True)
 def test_corrupted_put(backend, monkeypatch):
     key = 'brafasel'
     value = b'hello there, let us see whats going on'
@@ -651,7 +651,7 @@ def test_corrupted_put(backend, monkeypatch):
     assert backend[key] == value
 
 
-@pytest.mark.with_backend('s3c/{raw,aes+zlib}', 'storjs3/{raw,aes+zlib}', require_mock_server=True)
+@pytest.mark.with_backend('s3c/{raw,aes+zlib}', 'storjs3t/{raw,aes+zlib}', require_mock_server=True)
 def test_get_s3error(backend, monkeypatch):
     value = b'hello there, let us see whats going on'
     key = 'quote'
@@ -674,7 +674,7 @@ def test_get_s3error(backend, monkeypatch):
     assert backend[key] == value
 
 
-@pytest.mark.with_backend('s3c/{raw,aes+zlib}', 'storjs3/{raw,aes+zlib}', require_mock_server=True)
+@pytest.mark.with_backend('s3c/{raw,aes+zlib}', 'storjs3t/{raw,aes+zlib}', require_mock_server=True)
 def test_head_s3error(backend, monkeypatch):
     value = b'hello there, let us see whats going on'
     key = 'quote'
@@ -700,7 +700,7 @@ def test_head_s3error(backend, monkeypatch):
     assert backend.lookup(key) == meta
 
 
-@pytest.mark.with_backend('s3c/raw', 'storjs3/raw', require_mock_server=True)
+@pytest.mark.with_backend('s3c/raw', 'storjs3t/raw', require_mock_server=True)
 def test_delete_s3error(backend, monkeypatch):
     value = b'hello there, let us see whats going on'
     key = 'quote'
@@ -723,7 +723,7 @@ def test_delete_s3error(backend, monkeypatch):
     backend.delete(key)
 
 
-@pytest.mark.with_backend('s3c/raw', 'storjs3/raw', require_mock_server=True)
+@pytest.mark.with_backend('s3c/raw', 'storjs3t/raw', require_mock_server=True)
 def test_backoff(backend, monkeypatch):
     value = b'hello there, let us see whats going on'
     key = 'quote'
@@ -749,7 +749,7 @@ def test_backoff(backend, monkeypatch):
     assert timestamps[2] - timestamps[0] < 10
 
 
-@pytest.mark.with_backend('s3c/aes+zlib', 'storjs3/aes+zlib', require_mock_server=True)
+@pytest.mark.with_backend('s3c/aes+zlib', 'storjs3t/aes+zlib', require_mock_server=True)
 def test_httperror(backend, monkeypatch):
     value = b'hello there, let us see whats going on'
     key = 'quote'
@@ -777,7 +777,7 @@ def test_httperror(backend, monkeypatch):
     backend.delete(key)
 
 
-@pytest.mark.with_backend('s3c/aes+zlib', 'storjs3/aes+zlib', require_mock_server=True)
+@pytest.mark.with_backend('s3c/aes+zlib', 'storjs3t/aes+zlib', require_mock_server=True)
 def test_put_s3error_early(backend, monkeypatch):
     '''Fail after expect-100'''
 
@@ -803,7 +803,7 @@ def test_put_s3error_early(backend, monkeypatch):
     backend.store(key, data)
 
 
-@pytest.mark.with_backend('s3c/aes+zlib', 'storjs3/aes+zlib', require_mock_server=True)
+@pytest.mark.with_backend('s3c/aes+zlib', 'storjs3t/aes+zlib', require_mock_server=True)
 def test_put_s3error_med(backend, monkeypatch):
     '''Fail as soon as data is received'''
     data = b'hello there, let us see whats going on'
@@ -834,7 +834,7 @@ def test_put_s3error_med(backend, monkeypatch):
     backend.store(key, data)
 
 
-@pytest.mark.with_backend('s3c/aes+zlib', 'storjs3/aes+zlib', require_mock_server=True)
+@pytest.mark.with_backend('s3c/aes+zlib', 'storjs3t/aes+zlib', require_mock_server=True)
 def test_put_s3error_late(backend, monkeypatch):
     '''Fail after reading all data'''
     data = b'hello there, let us see whats going on'
@@ -859,7 +859,7 @@ def test_put_s3error_late(backend, monkeypatch):
     backend.store(key, data)
 
 
-@pytest.mark.with_backend('s3c/aes+zlib', 'storjs3/aes+zlib', require_mock_server=True)
+@pytest.mark.with_backend('s3c/aes+zlib', 'storjs3t/aes+zlib', require_mock_server=True)
 def test_issue58(backend, monkeypatch):
     '''Send error while client is sending data'''
 
@@ -892,7 +892,7 @@ def test_issue58(backend, monkeypatch):
     backend.store('borg', buf)
 
 
-@pytest.mark.with_backend('s3c/aes+zlib', 'storjs3/aes+zlib', require_mock_server=True)
+@pytest.mark.with_backend('s3c/aes+zlib', 'storjs3t/aes+zlib', require_mock_server=True)
 def test_issue58_b(backend, monkeypatch):
     '''Close connection while client is sending data'''
 
@@ -995,7 +995,7 @@ def test_expired_token_put(backend, monkeypatch):
     assert token_refreshed
 
 
-@pytest.mark.with_backend('s3c/aes+zlib', 'storjs3/aes+zlib', require_mock_server=True)
+@pytest.mark.with_backend('s3c/aes+zlib', 'storjs3t/aes+zlib', require_mock_server=True)
 def test_conn_abort(backend, monkeypatch):
     '''Close connection while sending data'''
 

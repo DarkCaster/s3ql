@@ -569,7 +569,7 @@ class BulkDeleteSwiftRequestHandler(BasicSwiftRequestHandler):
 #: corresponding storage urls
 handler_list = [
     (S3CRequestHandler, 's3c://%(host)s:%(port)d/s3ql_test'),
-    (S3CRequestHandler, 'storjs3://%(host)s:%(port)d/storjs3_test'),
+    (S3CRequestHandler, 'storjs3t://%(host)s:%(port)d/storjs3t_test'),
     # Special syntax only for testing against mock server
     (BasicSwiftRequestHandler, 'swift://%(host)s:%(port)d/s3ql_test'),
     (CopySwiftRequestHandler, 'swift://%(host)s:%(port)d/s3ql_test'),
