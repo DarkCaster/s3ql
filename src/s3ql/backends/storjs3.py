@@ -41,12 +41,6 @@ def STR_DECODE(b64key):
     return base64.urlsafe_b64decode(b64key.encode()).decode()
 
 
-def GET_RANDOM_DELAY(base, mult):
-    if mult < 1:
-        mult = 1
-    return base * random.uniform(1, mult)
-
-
 # NOTE: as of S3QL 5.1.2 - HTTPConnection class seem to contain internal problem that may lead to filesystem crash
 # when calling to "reset" method, it will open another connection right after disconnect, and if it fail - exception may not be handled properly
 # when it called from inside Backend::is_temp_failure method.
@@ -59,9 +53,13 @@ class STORJConnection(HTTPConnection):
     def reset(self):
         self.disconnect()
 
+
 # some sane default for object retention periods and retries
-LOCK_RETRY_INTERVAL = 1
-GRACELOCK_INTERVAL = 30
+LOCK_RETRY_BASE = 0.5
+LOCK_RETRY_EXTRA = 1
+GRACE_BASE_TIME = 20
+GRACE_EXTRA_TIME = 20
+
 
 class ConsistencyLock:
     '''
@@ -72,13 +70,13 @@ class ConsistencyLock:
     after previous write operation to the same object
     '''
 
-    def __init__(self, grace_timeout):
+    def __init__(self):
         self.oplock = threading.Lock()
         self.writelocks = set()
         self.readlocks = dict()
         self.gracelocks = dict()
-        self.grace_timeout = grace_timeout
         self.tls = threading.local()
+        self.UpdateTimeouts(LOCK_RETRY_BASE, LOCK_RETRY_EXTRA, GRACE_BASE_TIME, GRACE_EXTRA_TIME)
 
     @property
     def tls_cnt(self):
@@ -92,7 +90,23 @@ class ConsistencyLock:
     def tls_cnt(self, value):
         self.tls.cnt = value
 
-    def _gracelocks_cleanup(self):
+    def UpdateTimeouts(self, lock_retry_base, lock_retry_extra, grace_time_base, grace_time_extra):
+        self.oplock.acquire()
+        try:
+            self.lock_retry_base = lock_retry_base
+            self.lock_retry_extra = lock_retry_extra
+            self.grace_time_base = grace_time_base
+            self.grace_time_extra = grace_time_extra
+        finally:
+            self.oplock.release()
+
+    def _GenLockRetryTimeout(self):
+        return self.lock_retry_base + random.uniform(0, self.lock_retry_extra)
+
+    def _GenGraceTimeout(self):
+        return self.grace_time_base + random.uniform(0, self.grace_time_extra)
+
+    def _GracelocksCleanup(self):
         # no need to lock here
         mark = time.monotonic()
         to_remove = set()
@@ -119,18 +133,17 @@ class ConsistencyLock:
                     # check key is not writelocked, set timer, start over if so
                     if key in self.writelocks:
                         log.warning('trying to read key that is held by writelock: %s', key)
-                        wait_time = LOCK_RETRY_INTERVAL + GET_RANDOM_DELAY(0.1,10)
+                        wait_time = self._GenLockRetryTimeout()
                         continue
                     # check key is not gracelocked, set timer, start over if so
                     if key in self.gracelocks:
                         mark_end = self.gracelocks[key]
                         wait_time = mark_end - mark
                         if wait_time > 0:
-                            wait_time = wait_time + GET_RANDOM_DELAY(0.1,10)
                             log.info('trying to read key that is held by gracelock: %s, time left: %0.2f', key, wait_time)
                             continue
                     # perform housekeeping for gracelocks
-                    self._gracelocks_cleanup()
+                    self._GracelocksCleanup()
                 # increase key read counter
                 if key in self.readlocks:
                     rcnt = self.readlocks[key]
@@ -174,23 +187,22 @@ class ConsistencyLock:
                     # check key not readlocked, set timer, start over if so
                     if key in self.readlocks:
                         log.warning('trying to write key that is held by readlock: %s', key)
-                        wait_time = LOCK_RETRY_INTERVAL + GET_RANDOM_DELAY(0.1,10)
+                        wait_time = self._GenLockRetryTimeout()
                         continue
                     # check key not writelocked, set timer, start over if so
                     if key in self.writelocks:
                         log.warning('trying to write key that is held by writelock: %s', key)
-                        wait_time = LOCK_RETRY_INTERVAL + GET_RANDOM_DELAY(0.1,10)
+                        wait_time = self._GenLockRetryTimeout()
                         continue
                     # check key is not gracelocked, set timer, start over if so
                     if key in self.gracelocks:
                         mark_end = self.gracelocks[key]
                         wait_time = mark_end - mark
                         if wait_time > 0:
-                            wait_time = wait_time + GET_RANDOM_DELAY(0.1,10)
                             log.info('trying to write key that is held by gracelock: %s, time left: %0.2f', key, wait_time)
                             continue
                     # perform housekeeping for gracelocks
-                    self._gracelocks_cleanup()
+                    self._GracelocksCleanup()
                 if self.tls_cnt < 1:
                     # set writelock for this key
                     self.writelocks.add(key)
@@ -210,7 +222,7 @@ class ConsistencyLock:
             # remove writelock for this key
             self.writelocks.remove(key)
             # set gracelock for this key
-            mark = time.monotonic() + self.grace_timeout
+            mark = time.monotonic() + self._GenGraceTimeout()
             self.gracelocks[key] = mark
         except KeyError:
             log.warning("key error while managing writelocks on write release")
@@ -218,7 +230,7 @@ class ConsistencyLock:
             self.oplock.release()
 
 
-CONSISTENCY_LOCK = ConsistencyLock(GRACELOCK_INTERVAL)
+CONSISTENCY_LOCK = ConsistencyLock()
 
 
 class Backend(s3c.Backend):
@@ -227,14 +239,14 @@ class Backend(s3c.Backend):
     Uses some quirks for placing data/seq/metadata objects in the storj bucket.
     This is needed for gateway-st/gateway-mt limited ListObjectsV2 S3-API to work correctly
     with buckets that contains more than 100K objects.
+
+    Also introduce object read/write locking and extra protective timeouts with randomization
+    to ensure data objects consistency and more uniform request distribution
     """
 
     def __init__(self, options):
         super().__init__(options)
-        log.info('Storj S3 backend created by thread: %d', threading.get_native_id())
-
-    def update_consistency_lock(self, interval):
-        CONSISTENCY_LOCK.grace_timeout = interval
+        self.storjlock = CONSISTENCY_LOCK
 
     def _translate_s3_key_to_storj(self, key):
         '''convert object key to the form suitable for use with storj s3 bucket'''
@@ -313,35 +325,35 @@ class Backend(s3c.Backend):
 
     def delete(self, key):
         key_t = self._translate_s3_key_to_storj(key)
-        CONSISTENCY_LOCK.AcquireWrite(key_t)
+        self.storjlock.AcquireWrite(key_t)
         try:
             return super().delete(key_t)
         finally:
-            CONSISTENCY_LOCK.ReleaseWrite(key_t)
+            self.storjlock.ReleaseWrite(key_t)
 
     def lookup(self, key):
         key_t = self._translate_s3_key_to_storj(key)
-        CONSISTENCY_LOCK.AcquireRead(key_t)
+        self.storjlock.AcquireRead(key_t)
         try:
             return super().lookup(key_t)
         finally:
-            CONSISTENCY_LOCK.ReleaseRead(key_t)
+            self.storjlock.ReleaseRead(key_t)
 
     def get_size(self, key):
         key_t = self._translate_s3_key_to_storj(key)
-        CONSISTENCY_LOCK.AcquireRead(key_t)
+        self.storjlock.AcquireRead(key_t)
         try:
             return super().get_size(key_t)
         finally:
-            CONSISTENCY_LOCK.ReleaseRead(key_t)
+            self.storjlock.ReleaseRead(key_t)
 
     def readinto_fh(self, key: str, fh: BinaryIO):
         key_t = self._translate_s3_key_to_storj(key)
-        CONSISTENCY_LOCK.AcquireRead(key_t)
+        self.storjlock.AcquireRead(key_t)
         try:
             return super().readinto_fh(key_t, fh)
         finally:
-            CONSISTENCY_LOCK.ReleaseRead(key_t)
+            self.storjlock.ReleaseRead(key_t)
 
     def write_fh(
         self,
@@ -351,11 +363,11 @@ class Backend(s3c.Backend):
         len_: Optional[int] = None,
     ):
         key_t = self._translate_s3_key_to_storj(key)
-        CONSISTENCY_LOCK.AcquireWrite(key_t)
+        self.storjlock.AcquireWrite(key_t)
         try:
             return super().write_fh(key_t, fh, metadata, len_)
         finally:
-            CONSISTENCY_LOCK.ReleaseWrite(key_t)
+            self.storjlock.ReleaseWrite(key_t)
 
     def __str__(self):
         return 'storjs3://%s/%s/%s' % (self.hostname, self.bucket_name, self.prefix)

@@ -6,8 +6,8 @@ log = logging.getLogger(__name__)
 
 
 class Backend(storjs3.Backend):
-    # test storjs3 backend with lower grace period, for test purposes
+    # test storjs3 backend with lower grace periods, for test purposes
 
     def __init__(self, options):
         super().__init__(options)
-        self.update_consistency_lock(1)
+        self.storjlock.UpdateTimeouts(1, 1, 1, 1)
