@@ -59,7 +59,7 @@ class STORJConnection(HTTPConnection):
     def reset(self):
         self.disconnect()
 
-# some (in)sane default for object retention periods and retries
+# some sane default for object retention periods and retries
 LOCK_RETRY_INTERVAL = 1
 GRACELOCK_INTERVAL = 30
 
@@ -72,11 +72,12 @@ class ConsistencyLock:
     after previous write operation to the same object
     '''
 
-    def __init__(self):
+    def __init__(self, grace_timeout):
         self.oplock = threading.Lock()
         self.writelocks = set()
         self.readlocks = dict()
         self.gracelocks = dict()
+        self.grace_timeout = grace_timeout
         self.tls = threading.local()
         self.tls.cnt = 0
 
@@ -186,7 +187,7 @@ class ConsistencyLock:
             # remove writelock for this key
             self.writelocks.remove(key)
             # set gracelock for this key
-            mark = time.monotonic() + GRACELOCK_INTERVAL
+            mark = time.monotonic() + self.grace_timeout
             self.gracelocks[key] = mark
         except KeyError:
             log.warning("key error while managing writelocks on write release")
@@ -204,7 +205,7 @@ class Backend(s3c.Backend):
 
     def __init__(self, options):
         super().__init__(options)
-        self.oplock = ConsistencyLock()
+        self.oplock = ConsistencyLock(GRACELOCK_INTERVAL)
 
     def _translate_s3_key_to_storj(self, key):
         '''convert object key to the form suitable for use with storj s3 bucket'''
