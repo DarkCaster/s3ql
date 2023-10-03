@@ -12,6 +12,7 @@ import base64
 import time
 import threading
 import random
+import socket
 
 from typing import Any, BinaryIO, Dict, Optional
 from ..logging import QuietError
@@ -51,7 +52,19 @@ class STORJConnection(HTTPConnection):
         super().__init__(hostname, port, ssl_context, proxy)
 
     def reset(self):
-        self.disconnect()
+        # disconnect without shutdown, used on network errors for fast close
+        super().disconnect()
+
+    def disconnect(self):
+        # on normal disconnect try proper shutdown on socket first
+        # so remote S3 gateway will deallocate its' resources faster
+        if self._sock:
+            try:
+                self._sock.shutdown(socket.SHUT_RDWR)
+            # just silently ignore any possible error here, shutdown is not really essential for closing the connection
+            except:
+                pass
+        super().disconnect()
 
 
 # some sane default for object retention periods and retries
