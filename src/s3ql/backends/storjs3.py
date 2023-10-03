@@ -132,7 +132,7 @@ class ConsistencyLock:
                 else:
                     # check key is not writelocked, set timer, start over if so
                     if key in self.writelocks:
-                        log.warning('trying to read key that is held by writelock: %s', key)
+                        log.warning('trying to read object that is being written: %s', key)
                         wait_time = self._GenLockRetryTimeout()
                         continue
                     # check key is not gracelocked, set timer, start over if so
@@ -140,7 +140,7 @@ class ConsistencyLock:
                         mark_end = self.gracelocks[key]
                         wait_time = mark_end - mark
                         if wait_time > 0:
-                            log.info('trying to read key that is held by gracelock: %s, time left: %0.2f', key, wait_time)
+                            log.info('delaying read to ensure consistency: %0.2fs for %s', wait_time, key)
                             continue
                     # perform housekeeping for gracelocks
                     self._GracelocksCleanup()
@@ -184,14 +184,9 @@ class ConsistencyLock:
                 if self.tls_cnt > 0:
                     log.info('recursive use of lock for claiming write operaion: %s', key)
                 else:
-                    # check key not readlocked, set timer, start over if so
-                    if key in self.readlocks:
-                        log.warning('trying to write key that is held by readlock: %s', key)
-                        wait_time = self._GenLockRetryTimeout()
-                        continue
-                    # check key not writelocked, set timer, start over if so
-                    if key in self.writelocks:
-                        log.warning('trying to write key that is held by writelock: %s', key)
+                    # check object is not being downloaded or uploaded right now
+                    if key in self.readlocks or key in self.writelocks:
+                        log.warning('trying to write object that is being accessed: %s', key)
                         wait_time = self._GenLockRetryTimeout()
                         continue
                     # check key is not gracelocked, set timer, start over if so
@@ -199,7 +194,7 @@ class ConsistencyLock:
                         mark_end = self.gracelocks[key]
                         wait_time = mark_end - mark
                         if wait_time > 0:
-                            log.info('trying to write key that is held by gracelock: %s, time left: %0.2f', key, wait_time)
+                            log.info('delaying write to ensure consistency: %0.2fs for %s', wait_time, key)
                             continue
                     # perform housekeeping for gracelocks
                     self._GracelocksCleanup()
