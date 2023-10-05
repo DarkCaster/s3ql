@@ -67,6 +67,34 @@ class STORJConnection(HTTPConnection):
         super().disconnect()
 
 
+BACKEND_MANAGER_TICK = 1
+BACKEND_MANAGER_TICK_EXTRA = 2
+
+
+class BackendManager(threading.Thread):
+    def __init__(self):
+        super().__init__(target = self.run)
+        self.daemon = True
+        self.oplock = threading.Lock()
+        self.UpdateTimeouts(BACKEND_MANAGER_TICK, BACKEND_MANAGER_TICK_EXTRA)
+
+    def UpdateTimeouts(self, tick_interval, tick_interval_extra):
+        self.oplock.acquire()
+        try:
+            self.tick_interval = tick_interval
+            self.tick_interval_extra = tick_interval_extra
+        finally:
+            self.oplock.release()
+
+    def _GenTickTime(self):
+        return self.tick_interval + random.uniform(0, self.tick_interval_extra)
+
+    def run(self):
+        log.info("Started backend management worker, thread id %d", threading.get_native_id())
+        while True:
+            time.sleep(self._GenTickTime())
+
+
 # some sane default for object retention periods and retries
 LOCK_RETRY_BASE = 0.5
 LOCK_RETRY_EXTRA = 1
@@ -239,6 +267,8 @@ class ConsistencyLock:
 
 
 CONSISTENCY_LOCK = ConsistencyLock()
+BACKEND_MANAGER = BackendManager()
+BACKEND_MANAGER.start()
 
 
 class Backend(s3c.Backend):
@@ -255,6 +285,8 @@ class Backend(s3c.Backend):
     def __init__(self, options):
         super().__init__(options)
         self.storjlock = CONSISTENCY_LOCK
+        self.manager = BACKEND_MANAGER
+        self.oplock = threading.RLock()
 
     def _translate_s3_key_to_storj(self, key):
         '''convert object key to the form suitable for use with storj s3 bucket'''
@@ -316,26 +348,34 @@ class Backend(s3c.Backend):
         # list s3ql_data segments for any partial s3ql_data_ or empty searches
         if PFX_DATA.startswith(prefix):
             log.debug('running list for %s sub-prefix', PFX_DATA_TRANSLATED)
-            inner_list = super().list(PFX_DATA_TRANSLATED)
-            for el in inner_list:
-                yield self._translate_data_key_to_s3(el)
+            # lock on the whole operation, so the whole series of page requests will not be interrupted
+            with self.oplock:
+                inner_list = super().list(PFX_DATA_TRANSLATED)
+                for el in inner_list:
+                    yield self._translate_data_key_to_s3(el)
+                # TODO: report backend network activity
         # iterate over s3ql_other store, if search prefix not exactly "s3ql_data_"
         if prefix != PFX_DATA:
             # get inner list generator for s3ql_other/ prefix
             log.debug('running list for %s sub-prefix with manual filtering', PFX_OTHER_TRANSLATED)
-            inner_list = super().list(PFX_OTHER_TRANSLATED)
-            # translate keys for s3 form and filter against requested prefix manually
-            for el in inner_list:
-                el_t = self._translate_other_key_to_s3(el)
-                if not el_t.startswith(prefix):
-                    continue
-                yield el_t
+            # lock on the whole operation, so the whole series of page requests will not be interrupted
+            with self.oplock:
+                inner_list = super().list(PFX_OTHER_TRANSLATED)
+                # translate keys for s3 form and filter against requested prefix manually
+                for el in inner_list:
+                    el_t = self._translate_other_key_to_s3(el)
+                    if not el_t.startswith(prefix):
+                        continue
+                    yield el_t
+                # TODO: report backend network activity
 
     def delete(self, key):
         key_t = self._translate_s3_key_to_storj(key)
         self.storjlock.AcquireWrite(key_t)
         try:
-            return super().delete(key_t)
+            with self.oplock:
+                return super().delete(key_t)
+            # TODO: report backend network activity
         finally:
             self.storjlock.ReleaseWrite(key_t)
 
@@ -343,7 +383,9 @@ class Backend(s3c.Backend):
         key_t = self._translate_s3_key_to_storj(key)
         self.storjlock.AcquireRead(key_t)
         try:
-            return super().lookup(key_t)
+            with self.oplock:
+                return super().lookup(key_t)
+            # TODO: report backend network activity
         finally:
             self.storjlock.ReleaseRead(key_t)
 
@@ -351,7 +393,9 @@ class Backend(s3c.Backend):
         key_t = self._translate_s3_key_to_storj(key)
         self.storjlock.AcquireRead(key_t)
         try:
-            return super().get_size(key_t)
+            with self.oplock:
+                return super().get_size(key_t)
+            # TODO: report backend network activity
         finally:
             self.storjlock.ReleaseRead(key_t)
 
@@ -359,7 +403,9 @@ class Backend(s3c.Backend):
         key_t = self._translate_s3_key_to_storj(key)
         self.storjlock.AcquireRead(key_t)
         try:
-            return super().readinto_fh(key_t, fh)
+            with self.oplock:
+                return super().readinto_fh(key_t, fh)
+            # TODO: report backend network activity
         finally:
             self.storjlock.ReleaseRead(key_t)
 
@@ -373,7 +419,9 @@ class Backend(s3c.Backend):
         key_t = self._translate_s3_key_to_storj(key)
         self.storjlock.AcquireWrite(key_t)
         try:
-            return super().write_fh(key_t, fh, metadata, len_)
+            with self.oplock:
+                return super().write_fh(key_t, fh, metadata, len_)
+            # TODO: report backend network activity
         finally:
             self.storjlock.ReleaseWrite(key_t)
 
@@ -384,7 +432,8 @@ class Backend(s3c.Backend):
     def is_temp_failure(self, exc):
         result = False
         try:
-            result = super().is_temp_failure(exc)
+            with self.oplock:
+                result = super().is_temp_failure(exc)
             if result == True:
                 log.info('S3 error, exception: %s, %s', type(exc).__name__, exc)
             else:
@@ -399,5 +448,7 @@ class Backend(s3c.Backend):
         # It seem that STORJ S3 gateway does not like to reuse HTTP connection even after legitimate HTTP error responses.
         # For example 429 response with long retry timeout followed after that - makes currently established HTTP/TLS connection dormant,
         # and it silently closed on remote side long before the next request, causing fail on retry
-        self.conn.disconnect()
+        with self.oplock:
+            self.conn.disconnect()
+        # TODO: remove backend from tracking
         return result
