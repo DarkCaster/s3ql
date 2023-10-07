@@ -9,9 +9,7 @@ This work can be distributed under the terms of the GNU GPLv3.
 import logging
 import re
 import base64
-import time
 import threading
-import random
 import socket
 
 from ..storj_common import GetConsistencyLock, GetBackendManager
