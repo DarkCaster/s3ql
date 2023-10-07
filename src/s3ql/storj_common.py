@@ -36,7 +36,6 @@ class ConsistencyLock:
         self.gracelocks = dict()
         self.tls = threading.local()
         self.UpdateTimeouts(LOCK_RETRY_BASE, LOCK_RETRY_EXTRA, GRACE_BASE_TIME, GRACE_EXTRA_TIME)
-        self.id = random.randint(0, 9)
 
     @property
     def tls_cnt(self):
@@ -88,11 +87,11 @@ class ConsistencyLock:
             mark = time.monotonic()
             try:
                 if self.tls_cnt > 0:
-                    log.info('%d, recursive use of lock for claiming read operaion: %s', self.id, key)
+                    log.info('recursive use of lock for claiming read operaion: %s', key)
                 else:
                     # check key is not writelocked, set timer, start over if so
                     if key in self.writelocks:
-                        log.warning('%d, trying to read object that is being written: %s', self.id, key)
+                        log.warning('trying to read object that is being written: %s', key)
                         wait_time = self._GenLockRetryTimeout()
                         continue
                     # check key is not gracelocked, set timer, start over if so
@@ -100,7 +99,7 @@ class ConsistencyLock:
                         mark_end = self.gracelocks[key]
                         wait_time = mark_end - mark
                         if wait_time > 0:
-                            log.info('%d, delaying read to ensure consistency: %0.2fs for %s', self.id, wait_time, key)
+                            log.info('delaying read to ensure consistency: %0.2fs for %s', wait_time, key)
                             continue
                     # perform housekeeping for gracelocks
                     self._GracelocksCleanup()
@@ -128,7 +127,7 @@ class ConsistencyLock:
             else:
                 self.readlocks[key] = rcnt
         except KeyError:
-            log.warning("%d, key error while managing readlocks on read release", self.id)
+            log.warning('key error while managing readlocks on read release')
         finally:
             self.oplock.release()
 
@@ -142,11 +141,11 @@ class ConsistencyLock:
             mark = time.monotonic()
             try:
                 if self.tls_cnt > 0:
-                    log.info('%d, recursive use of lock for claiming write operaion: %s', self.id, key)
+                    log.info('recursive use of lock for claiming write operaion: %s', key)
                 else:
                     # check object is not being downloaded or uploaded right now
                     if key in self.readlocks or key in self.writelocks:
-                        log.warning('%d, trying to write object that is being accessed: %s', self.id, key)
+                        log.warning('trying to write object that is being accessed: %s', key)
                         wait_time = self._GenLockRetryTimeout()
                         continue
                     # check key is not gracelocked, set timer, start over if so
@@ -154,7 +153,7 @@ class ConsistencyLock:
                         mark_end = self.gracelocks[key]
                         wait_time = mark_end - mark
                         if wait_time > 0:
-                            log.info('%d, delaying write to ensure consistency: %0.2fs for %s', self.id, wait_time, key)
+                            log.info('delaying write to ensure consistency: %0.2fs for %s', wait_time, key)
                             continue
                     # perform housekeeping for gracelocks
                     self._GracelocksCleanup()
@@ -180,7 +179,7 @@ class ConsistencyLock:
             mark = time.monotonic() + self._GenGraceTimeout()
             self.gracelocks[key] = mark
         except KeyError:
-            log.warning("%d, key error while managing writelocks on write release", self.id)
+            log.warning('key error while managing writelocks on write release')
         finally:
             self.oplock.release()
 
