@@ -201,27 +201,16 @@ class BackendManager(threading.Thread):
         self.daemon = True
         self.oplock = threading.Lock()
         self.UpdateTimeouts(BACKEND_MANAGER_TICK, BACKEND_MANAGER_TICK_EXTRA)
-        self.start_delay = 10
-        self.start_time = 0
 
     def UpdateTimeouts(self, tick_interval, tick_interval_extra):
-        self.oplock.acquire()
-        try:
+        with self.oplock:
             self.tick_interval = tick_interval
             self.tick_interval_extra = tick_interval_extra
-        finally:
-            self.oplock.release()
 
     def _GenTickTime(self):
         return self.tick_interval + random.uniform(0, self.tick_interval_extra)
 
     def Worker(self):
-        while True:
-            if self.start_time < self.start_delay:
-                self.start_time += 1
-                time.sleep(1)
-            else:
-                break
         log.info("Backend management daemon running, thread id %d", threading.get_native_id())
         while True:
             time.sleep(self._GenTickTime())
