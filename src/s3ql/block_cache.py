@@ -246,8 +246,6 @@ class BlockCache:
                 t.start()
                 self.removal_threads.append(t)
 
-        self.backend_manager.start()
-
     async def destroy(self, keep_cache=False):
         '''Clean up and stop worker threads'''
 
