@@ -17,6 +17,7 @@ from . import s3c
 
 from s3ql.http import (
     HTTPConnection,
+    ConnectionClosed
 )
 
 log = logging.getLogger(__name__)
@@ -209,7 +210,10 @@ class Backend(s3c.Backend):
         try:
             result = super().is_temp_failure(exc)
             if result == True:
-                log.info('S3 error, exception: %s, %s', type(exc).__name__, exc)
+                # do not log the most common exception with storj s3
+                # due to long-living unused connection being closed remotely
+                if not isinstance(exc, ConnectionClosed):
+                    log.info('S3 error, exception: %s, %s', type(exc).__name__, exc)
             else:
                 log.info('S3 failed, exception: %s, %s', type(exc).__name__, exc)
         except Exception as e:
