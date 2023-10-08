@@ -3,9 +3,6 @@
 This is an experimental branch to test some of my concerns about the Storj S3 backend. I want to check if public Storj S3 gateway have real "immediate data consistency" as required by s3ql even in hours of peak load. In order to test that storj s3 backend must be extended with this features:
 
 - Added "consistency lock" logic, that will add dynamic delay after write/remove operations for objects with same keys, and block/warn about non-serialized read-write access to objects with same key (should not happen, ideally)
-- TODO: Make delay to be ajustable in runtime
-- TODO: Add extra background worker for checking consistency of recently modified objects, or after receiving some particular errors.
-- TODO: Depending on current conditions ajust protective consistency intervals for "consistency lock" logic
 
 # S3QL fork with improved Storj S3 backend support
 
