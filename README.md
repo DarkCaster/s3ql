@@ -4,6 +4,8 @@ This fork tries to solve 100K-object issue when using s3c backend to host your f
 
 See this issue for more info: <https://github.com/s3ql/s3ql/issues/326>
 
+Additionally it introduce extra consistency delays for storj backend when trying to access same object in potentially unsafe way - reading object from S3 right after writing, or deleting object that was just created. It seem that at least during peak hours, deleting newly created object without extra delay may silently fail and lead to surplus object in your bucket. Also storj s3 backend may generate 429 http error if not adding delay for such operations.
+
 Fix currently implemented as separate storjs3 backend. In order to use it you must choose "storjs3://" prefix instead of "s3c://" prefix in your s3ql auth file
 
 #### config example
