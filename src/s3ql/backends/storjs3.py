@@ -147,7 +147,6 @@ class Backend(s3c.Backend):
         if prefix != PFX_DATA:
             # get inner list generator for s3ql_other/ prefix
             log.debug('running list for %s sub-prefix with manual filtering', PFX_OTHER_TRANSLATED)
-            # lock on the whole operation, so the whole series of page requests will not be interrupted
             inner_list = super().list(PFX_OTHER_TRANSLATED)
             # translate keys for s3 form and filter against requested prefix manually
             for el in inner_list:
