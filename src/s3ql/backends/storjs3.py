@@ -9,9 +9,10 @@ This work can be distributed under the terms of the GNU GPLv3.
 import logging
 import re
 import base64
+import socket
 
+from ..storj_common import GetConsistencyLock
 from typing import Any, BinaryIO, Dict, Optional
-from ..logging import QuietError
 from . import s3c
 
 from s3ql.http import (
@@ -48,7 +49,19 @@ class STORJConnection(HTTPConnection):
         super().__init__(hostname, port, ssl_context, proxy)
 
     def reset(self):
-        self.disconnect()
+        # disconnect without shutdown, used on network errors for fast close
+        super().disconnect()
+
+    def disconnect(self):
+        # on normal disconnect try proper shutdown on socket first
+        # so remote S3 gateway will deallocate its' resources faster
+        if self._sock:
+            try:
+                self._sock.shutdown(socket.SHUT_RDWR)
+            # just silently ignore any possible error here, shutdown is not really essential for closing the connection
+            except:
+                pass
+        super().disconnect()
 
 
 class Backend(s3c.Backend):
@@ -57,10 +70,14 @@ class Backend(s3c.Backend):
     Uses some quirks for placing data/seq/metadata objects in the storj bucket.
     This is needed for gateway-st/gateway-mt limited ListObjectsV2 S3-API to work correctly
     with buckets that contains more than 100K objects.
+
+    Also introduce object read/write locking and extra protective timeouts with randomization
+    to ensure data objects consistency and more uniform request distribution
     """
 
     def __init__(self, options):
         super().__init__(options)
+        self.storjlock = GetConsistencyLock()
 
     def _translate_s3_key_to_storj(self, key):
         '''convert object key to the form suitable for use with storj s3 bucket'''
@@ -139,19 +156,35 @@ class Backend(s3c.Backend):
 
     def delete(self, key):
         key_t = self._translate_s3_key_to_storj(key)
-        return super().delete(key_t)
+        self.storjlock.AcquireWrite(key_t)
+        try:
+            return super().delete(key_t)
+        finally:
+            self.storjlock.ReleaseWrite(key_t)
 
     def lookup(self, key):
         key_t = self._translate_s3_key_to_storj(key)
-        return super().lookup(key_t)
+        self.storjlock.AcquireRead(key_t)
+        try:
+            return super().lookup(key_t)
+        finally:
+            self.storjlock.ReleaseRead(key_t)
 
     def get_size(self, key):
         key_t = self._translate_s3_key_to_storj(key)
-        return super().get_size(key_t)
+        self.storjlock.AcquireRead(key_t)
+        try:
+            return super().get_size(key_t)
+        finally:
+            self.storjlock.ReleaseRead(key_t)
 
     def readinto_fh(self, key: str, fh: BinaryIO):
         key_t = self._translate_s3_key_to_storj(key)
-        return super().readinto_fh(key_t, fh)
+        self.storjlock.AcquireRead(key_t)
+        try:
+            return super().readinto_fh(key_t, fh)
+        finally:
+            self.storjlock.ReleaseRead(key_t)
 
     def write_fh(
         self,
@@ -161,7 +194,11 @@ class Backend(s3c.Backend):
         len_: Optional[int] = None,
     ):
         key_t = self._translate_s3_key_to_storj(key)
-        return super().write_fh(key_t, fh, metadata, len_)
+        self.storjlock.AcquireWrite(key_t)
+        try:
+            return super().write_fh(key_t, fh, metadata, len_)
+        finally:
+            self.storjlock.ReleaseWrite(key_t)
 
     def __str__(self):
         return 'storjs3://%s/%s/%s' % (self.hostname, self.bucket_name, self.prefix)
