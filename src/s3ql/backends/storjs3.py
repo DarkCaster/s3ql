@@ -15,10 +15,7 @@ from ..storj_common import GetConsistencyLock
 from typing import Any, BinaryIO, Dict, Optional
 from . import s3c
 
-from s3ql.http import (
-    HTTPConnection,
-    ConnectionClosed
-)
+from s3ql.http import HTTPConnection, ConnectionClosed
 
 log = logging.getLogger(__name__)
 
