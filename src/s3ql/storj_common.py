@@ -75,10 +75,10 @@ class ConsistencyLock:
                 to_remove.add(key)
         for key in to_remove:
             del self.gracelocks[key]
-            #log.info("removed key from gracelocks: %s", key)
+            # log.info("removed key from gracelocks: %s", key)
 
     def AcquireRead(self, key):
-        wait_time=0
+        wait_time = 0
         while True:
             # wait for retention time, calculated at previous step, if any
             if wait_time > 0:
@@ -99,7 +99,9 @@ class ConsistencyLock:
                         mark_end = self.gracelocks[key]
                         wait_time = mark_end - mark
                         if wait_time > 0:
-                            log.info('delaying read to ensure consistency: %0.2fs for %s', wait_time, key)
+                            log.info(
+                                'delaying read to ensure consistency: %0.2fs for %s', wait_time, key
+                            )
                             continue
                     # perform housekeeping for gracelocks
                     self._GracelocksCleanup()
@@ -156,7 +158,7 @@ class ConsistencyLock:
                             log.info(
                                 'delaying write to ensure consistency: %0.2fs for %s',
                                 wait_time,
-                                key
+                                key,
                             )
                             continue
                     # perform housekeeping for gracelocks
