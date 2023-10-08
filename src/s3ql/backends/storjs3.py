@@ -13,7 +13,6 @@ import socket
 
 from ..storj_common import GetConsistencyLock
 from typing import Any, BinaryIO, Dict, Optional
-from ..logging import QuietError
 from . import s3c
 
 from s3ql.http import (
