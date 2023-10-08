@@ -87,7 +87,7 @@ class ConsistencyLock:
             mark = time.monotonic()
             try:
                 if self.tls_cnt > 0:
-                    log.info('recursive use of lock for claiming read operaion: %s', key)
+                    log.info('recursive use of lock for claiming read operation: %s', key)
                 else:
                     # check key is not writelocked, set timer, start over if so
                     if key in self.writelocks:
@@ -132,7 +132,7 @@ class ConsistencyLock:
             self.oplock.release()
 
     def AcquireWrite(self, key):
-        wait_time=0
+        wait_time = 0
         while True:
             # wait for retention time, calculated at previous step if any
             if wait_time > 0:
@@ -141,7 +141,7 @@ class ConsistencyLock:
             mark = time.monotonic()
             try:
                 if self.tls_cnt > 0:
-                    log.info('recursive use of lock for claiming write operaion: %s', key)
+                    log.info('recursive use of lock for claiming write operation: %s', key)
                 else:
                     # check object is not being downloaded or uploaded right now
                     if key in self.readlocks or key in self.writelocks:
@@ -153,7 +153,11 @@ class ConsistencyLock:
                         mark_end = self.gracelocks[key]
                         wait_time = mark_end - mark
                         if wait_time > 0:
-                            log.info('delaying write to ensure consistency: %0.2fs for %s', wait_time, key)
+                            log.info(
+                                'delaying write to ensure consistency: %0.2fs for %s',
+                                wait_time,
+                                key
+                            )
                             continue
                     # perform housekeeping for gracelocks
                     self._GracelocksCleanup()
