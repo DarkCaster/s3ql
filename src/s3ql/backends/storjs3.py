@@ -9,10 +9,9 @@ This work can be distributed under the terms of the GNU GPLv3.
 import logging
 import re
 import base64
-import threading
 import socket
 
-from ..storj_common import GetConsistencyLock, GetBackendManager
+from ..storj_common import GetConsistencyLock
 from typing import Any, BinaryIO, Dict, Optional
 from ..logging import QuietError
 from . import s3c
@@ -80,8 +79,6 @@ class Backend(s3c.Backend):
     def __init__(self, options):
         super().__init__(options)
         self.storjlock = GetConsistencyLock()
-        self.manager = GetBackendManager()
-        self.oplock = threading.RLock()
 
     def _translate_s3_key_to_storj(self, key):
         '''convert object key to the form suitable for use with storj s3 bucket'''
@@ -143,34 +140,27 @@ class Backend(s3c.Backend):
         # list s3ql_data segments for any partial s3ql_data_ or empty searches
         if PFX_DATA.startswith(prefix):
             log.debug('running list for %s sub-prefix', PFX_DATA_TRANSLATED)
-            # lock on the whole operation, so the whole series of page requests will not be interrupted
-            with self.oplock:
-                inner_list = super().list(PFX_DATA_TRANSLATED)
-                for el in inner_list:
-                    yield self._translate_data_key_to_s3(el)
-                # TODO: report backend network activity
+            inner_list = super().list(PFX_DATA_TRANSLATED)
+            for el in inner_list:
+                yield self._translate_data_key_to_s3(el)
         # iterate over s3ql_other store, if search prefix not exactly "s3ql_data_"
         if prefix != PFX_DATA:
             # get inner list generator for s3ql_other/ prefix
             log.debug('running list for %s sub-prefix with manual filtering', PFX_OTHER_TRANSLATED)
             # lock on the whole operation, so the whole series of page requests will not be interrupted
-            with self.oplock:
-                inner_list = super().list(PFX_OTHER_TRANSLATED)
-                # translate keys for s3 form and filter against requested prefix manually
-                for el in inner_list:
-                    el_t = self._translate_other_key_to_s3(el)
-                    if not el_t.startswith(prefix):
-                        continue
-                    yield el_t
-                # TODO: report backend network activity
+            inner_list = super().list(PFX_OTHER_TRANSLATED)
+            # translate keys for s3 form and filter against requested prefix manually
+            for el in inner_list:
+                el_t = self._translate_other_key_to_s3(el)
+                if not el_t.startswith(prefix):
+                    continue
+                yield el_t
 
     def delete(self, key):
         key_t = self._translate_s3_key_to_storj(key)
         self.storjlock.AcquireWrite(key_t)
         try:
-            with self.oplock:
-                return super().delete(key_t)
-            # TODO: report backend network activity
+            return super().delete(key_t)
         finally:
             self.storjlock.ReleaseWrite(key_t)
 
@@ -178,9 +168,7 @@ class Backend(s3c.Backend):
         key_t = self._translate_s3_key_to_storj(key)
         self.storjlock.AcquireRead(key_t)
         try:
-            with self.oplock:
-                return super().lookup(key_t)
-            # TODO: report backend network activity
+            return super().lookup(key_t)
         finally:
             self.storjlock.ReleaseRead(key_t)
 
@@ -188,9 +176,7 @@ class Backend(s3c.Backend):
         key_t = self._translate_s3_key_to_storj(key)
         self.storjlock.AcquireRead(key_t)
         try:
-            with self.oplock:
-                return super().get_size(key_t)
-            # TODO: report backend network activity
+            return super().get_size(key_t)
         finally:
             self.storjlock.ReleaseRead(key_t)
 
@@ -198,9 +184,7 @@ class Backend(s3c.Backend):
         key_t = self._translate_s3_key_to_storj(key)
         self.storjlock.AcquireRead(key_t)
         try:
-            with self.oplock:
-                return super().readinto_fh(key_t, fh)
-            # TODO: report backend network activity
+            return super().readinto_fh(key_t, fh)
         finally:
             self.storjlock.ReleaseRead(key_t)
 
@@ -214,9 +198,7 @@ class Backend(s3c.Backend):
         key_t = self._translate_s3_key_to_storj(key)
         self.storjlock.AcquireWrite(key_t)
         try:
-            with self.oplock:
-                return super().write_fh(key_t, fh, metadata, len_)
-            # TODO: report backend network activity
+            return super().write_fh(key_t, fh, metadata, len_)
         finally:
             self.storjlock.ReleaseWrite(key_t)
 
@@ -227,8 +209,7 @@ class Backend(s3c.Backend):
     def is_temp_failure(self, exc):
         result = False
         try:
-            with self.oplock:
-                result = super().is_temp_failure(exc)
+            result = super().is_temp_failure(exc)
             if result == True:
                 log.info('S3 error, exception: %s, %s', type(exc).__name__, exc)
             else:
@@ -243,7 +224,5 @@ class Backend(s3c.Backend):
         # It seem that STORJ S3 gateway does not like to reuse HTTP connection even after legitimate HTTP error responses.
         # For example 429 response with long retry timeout followed after that - makes currently established HTTP/TLS connection dormant,
         # and it silently closed on remote side long before the next request, causing fail on retry
-        with self.oplock:
-            self.conn.disconnect()
-        # TODO: remove backend from tracking
+        self.conn.disconnect()
         return result

@@ -182,38 +182,3 @@ class ConsistencyLock:
             log.warning('key error while managing writelocks on write release')
         finally:
             self.oplock.release()
-
-
-def GetBackendManager():
-    if 'BACKEND_MANAGER' not in globals():
-        globals()['BACKEND_MANAGER'] = BackendManager()
-    return globals()['BACKEND_MANAGER']
-
-
-BACKEND_MANAGER_TICK = 1
-BACKEND_MANAGER_TICK_EXTRA = 2
-
-
-class BackendManager(threading.Thread):
-    def __init__(self):
-        super().__init__(target = self.Worker)
-        self.daemon = True
-        self.oplock = threading.Lock()
-        self.UpdateTimeouts(BACKEND_MANAGER_TICK, BACKEND_MANAGER_TICK_EXTRA)
-
-    def UpdateTimeouts(self, tick_interval, tick_interval_extra):
-        with self.oplock:
-            self.tick_interval = tick_interval
-            self.tick_interval_extra = tick_interval_extra
-
-    def _GenTickTime(self):
-        return self.tick_interval + random.uniform(0, self.tick_interval_extra)
-
-    def Worker(self):
-        log.info("Backend management daemon running, thread id %d", threading.get_native_id())
-        while True:
-            time.sleep(self._GenTickTime())
-            self.Tick()
-
-    def Tick(self):
-        return

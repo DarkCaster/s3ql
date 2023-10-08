@@ -26,7 +26,6 @@ from s3ql.common import sha256_fh
 from .backends.common import NoSuchObject
 from .database import NoSuchRowError
 from .multi_lock import MultiLock
-from .storj_common import GetBackendManager
 
 try:
     from contextlib import asynccontextmanager
@@ -188,7 +187,6 @@ class BlockCache:
         self.upload_threads = []
         self.removal_threads = []
         self.transfer_completed = trio.Condition()
-        self.backend_manager = GetBackendManager()
 
         # Will be initialized once threads are available
         self.to_upload = None
