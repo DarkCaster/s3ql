@@ -161,6 +161,7 @@ class Backend(AbstractBackend):
                 SlowDownError,
                 ServiceUnavailableError,
                 TemporarilyUnavailableError,
+                InvalidAccessKeyIdError,
             ),
         ):
             return True
